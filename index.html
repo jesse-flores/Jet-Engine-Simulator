@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Jet Engine Simulator - Jesse Flores</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <link rel="stylesheet" href="css/styles.css" />
+</head>
+
+<body>
+    <header>
+        <h1>Interactive Jet Engine Simulator</h1>
+        <p class="subtitle">Real cycle outputs, T–s & P–T, thrust/TSFC sweeps</p>
+    </header>
+
+    <section class="container">
+        <section class="controls-card">
+            <h2>Flight & Engine Controls</h2>
+
+            <div class="control-row">
+                <label>Altitude: <strong><span id="altitudeValue">10000</span> ft</strong></label>
+                <input id="altitudeSlider" type="range" min="0" max="50000" step="500" value="10000" />
+            </div>
+
+            <div class="control-row">
+                <label>Mach: <strong><span id="machValue">0.80</span></strong></label>
+                <input id="machSlider" type="range" min="0" max="2.5" step="0.01" value="0.8" />
+            </div>
+
+            <div class="control-row pedal-row">
+                <table>
+                    <tr>
+                        <td width="25%">
+                            <p>Throttle (pedal slider)</p>
+                            <div id="pedalContainer" class="pedal-container" aria-label="Throttle pedal">
+                                <div id="pedal" class="pedal" title="Drag up for more throttle"></div>
+                            </div>
+                        </td>
+                        <td width="75%">
+                            <div class="pedal-readouts">
+                                <span>Throttle: <strong id="throttlePct">50%</strong></span>
+                                <span>Turbine Inlet Temp Tt4: <strong id="t04Value">1400</strong> K</span>
+                            </div>
+
+                            <div class="engine-visual-card">
+
+
+                                <svg id="engineSVG" style="z-index: 2;" viewBox="0 0 600 250"
+                                    preserveAspectRatio="xMidYMid meet">
+
+                                    <!-- Filters & Masks -->
+                                    <defs>
+                                        <!-- Heatwave distortion -->
+                                        <filter id="heatwave" x="-50%" y="-50%" width="200%" height="200%">
+                                            <feTurbulence id="heatTurb" baseFrequency="0.02 0.06" numOctaves="2"
+                                                seed="7" result="heat" />
+                                            <feDisplacementMap in="SourceGraphic" in2="heat" scale="6"
+                                                xChannelSelector="R" yChannelSelector="G" />
+                                        </filter>
+
+                                        <!-- Flame distortion -->
+                                        <filter id="flameFlicker" x="-50%" y="-50%" width="200%" height="200%">
+                                            <feTurbulence id="turbulence" baseFrequency="0.04 0.1" numOctaves="3"
+                                                seed="2" result="turb" />
+                                            <feDisplacementMap in="SourceGraphic" in2="turb" scale="8"
+                                                xChannelSelector="R" yChannelSelector="G" />
+                                        </filter>
+
+                                        <!-- Mask for heatwave -->
+                                        <mask id="heatMask">
+                                            <!-- White = visible area for heat distortion -->
+                                            <path id="heatMaskShape"
+                                                d="M0 0 C -20 -20, -80 -40, -200 0 C -80 40, -20 20, 0 0" fill="white"
+                                                opacity="0.6" />
+                                        </mask>
+
+                                        <!-- Flame gradients -->
+                                        <radialGradient id="flameGradientCore" cx="50%" cy="50%" r="50%">
+                                            <stop offset="0%" stop-color="white" />
+                                            <stop offset="60%" stop-color="yellow" />
+                                            <stop offset="100%" stop-color="orange" />
+                                        </radialGradient>
+                                        <radialGradient id="flameGradientMid" cx="50%" cy="50%" r="50%">
+                                            <stop offset="0%" stop-color="orange" />
+                                            <stop offset="80%" stop-color="red" stop-opacity="0.8" />
+                                            <stop offset="100%" stop-color="red" stop-opacity="0" />
+                                        </radialGradient>
+                                    </defs>
+
+                                    <!-- Engine body -->
+                                    <rect x="50" y="60" width="500" height="120" rx="20" fill="#222" stroke="#444" />
+
+                                    <!-- Stations -->
+                                    <g id="stations" fill="#cfcfcf" font-size="12" text-anchor="middle">
+                                        <text x="110" y="50">S2</text>
+                                        <text x="230" y="50">S3</text>
+                                        <text x="350" y="50">S4</text>
+                                        <text x="470" y="50">S5</text>
+                                    </g>
+
+                                    <!-- Heatwave layer masked to flame shape -->
+                                    <g transform="translate(450,120)">
+                                        <g mask="url(#heatMask)">
+                                            <rect x="-220" y="-60" width="220" height="120" fill="transparent"
+                                                filter="url(#heatwave)" />
+                                        </g>
+                                    </g>
+
+                                    <!-- Flame -->
+                                    <g id="flameGroup" transform="translate(450,120)">
+                                        <path id="flameOuter" d="M0 0 C -20 -20, -80 -40, -200 0 C -80 40, -20 20, 0 0"
+                                            fill="url(#flameGradientMid)" opacity="0.7" filter="url(#flameFlicker)" />
+                                        <path id="flameMid" d="M0 0 C -16 -16, -60 -30, -160 0 C -60 30, -16 16, 0 0"
+                                            fill="orange" opacity="0.8" filter="url(#flameFlicker)" />
+                                        <path id="flameCore" d="M0 0 C -10 -10, -40 -20, -120 0 C -40 20, -10 10, 0 0"
+                                            fill="url(#flameGradientCore)" opacity="0.9" filter="url(#flameFlicker)" />
+                                    </g>
+
+                                    <!-- Sparks -->
+                                    <g id="sparkGroup"></g>
+
+                                    <!-- Turbine -->
+                                    <g id="turbine" transform="translate(470,120)">
+                                        <circle r="50.6" fill="#777" stroke="#333"></circle>
+                                        <g id="turbineBlades" transform="scale(2.3)">
+                                            <rect x="-2" y="-22" width="4" height="12" fill="#333"></rect>
+                                            <rect x="-2" y="10" width="4" height="12" fill="#333"></rect>
+                                            <rect x="-22" y="-2" width="12" height="4" fill="#333"></rect>
+                                            <rect x="10" y="-2" width="12" height="4" fill="#333"></rect>
+                                        </g>
+                                    </g>
+                                </svg>
+                                <canvas id="particle-canvas" style="z-index: 1;"></canvas>
+
+                            </div>
+
+                        </td>
+
+                    </tr>
+
+                </table>
+            </div>
+        </section>
+
+        <section class="charts-card">
+            <h2>Live Charts</h2>
+            <!-- <div class="charts-grid"> -->
+            <table width=100%>
+                <tr>
+                    <td colspan="2">
+                        <section class="readouts-card">
+                            <h2>Performance Readouts</h2>
+                            <div class="readouts-grid">
+                                <div class="readout">
+                                    <div class="label">Net Thrust</div>
+                                    <div class="value"><span id="thrustOutput">0.0</span> kN</div>
+                                </div>
+                                <div class="readout">
+                                    <div class="label">TSFC</div>
+                                    <div class="value"><span id="tsfcOutput">0.0</span> g/kN·s</div>
+                                </div>
+                                <div class="readout">
+                                    <div class="label">Air Mass Flow</div>
+                                    <div class="value"><span id="airFlowOutput">0.0</span> kg/s</div>
+                                </div>
+                                <div class="readout">
+                                    <div class="label">Fuel Flow</div>
+                                    <div class="value"><span id="fuelFlowOutput">0.0</span> kg/s</div>
+                                </div>
+                                <div class="readout">
+                                    <div class="label">Overall Pressure Ratio (πc)</div>
+                                    <div class="value"><span id="oprOutput">12.0</span></div>
+                                </div>
+                                <div class="readout">
+                                    <div class="label">Turbine Inlet Temp (Tt4)</div>
+                                    <div class="value"><span id="t04Output">1400</span> K</div>
+                                </div>
+                            </div>
+                        </section>
+                    </td>
+                    <!-- <td width="50%"> -->
+                    <div class="chart-cell" style="display: none">
+                        <h3>T–s (Total Temperature vs Entropy)</h3>
+                        <canvas id="tsChart"></canvas>
+                    </div>
+                    <!-- </td> -->
+                </tr>
+                <tr>
+
+                    <td>
+                        <div class="chart-cell">
+                            <h3>P–T (Total Pressure & Temperature, Stations)</h3>
+                            <canvas id="ptChart"></canvas>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="chart-cell">
+                            <h3>Thrust vs Mach (at current altitude & Tt4)</h3>
+                            <canvas id="thrustMachChart"></canvas>
+                        </div>
+                    </td>
+
+                </tr>
+                <tr>
+                    <td>
+                        <div class="chart-cell">
+                            <h3>TSFC vs Mach</h3>
+                            <canvas id="tsfcMachChart"></canvas>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="chart-cell">
+                            <h3>Fuel Flow vs Throttle</h3>
+                            <canvas id="fuelThrottleChart"></canvas>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+            <!-- </div> -->
+        </section>
+    </section>
+
+    <footer>
+        <small>Simplified turbojet thermodynamic model -- for engineering education.</small>
+    </footer>
+
+    <script src="js/atmosphere.js"></script>
+    <script src="js/engine.js"></script>
+    <script src="js/main.js"></script>
+
+</body>
+
+</html>
